@@ -8,19 +8,31 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 
-def plot_action_data(csv_file):
+def plot_action_data(csv_file, gt_file):
     """
-    读取CSV文件并绘制7个子图
+    读取CSV文件并绘制动作子图，同时显示预测和GT数据，自动检测维度
     """
-    # 读取CSV文件（无列名）
-    data = pd.read_csv(csv_file, header=None)
+    # 读取预测数据（无列名）
+    data_pred = pd.read_csv(csv_file, header=None)
+    
+    # 读取GT数据（无列名）
+    data_gt = pd.read_csv(gt_file, header=None)
+    
+    # 自动检测维度
+    n_dims = min(data_pred.shape[1], data_gt.shape[1])
     
     # 为列命名
-    column_names = ['Action_1', 'Action_2', 'Action_3', 'Action_4', 'Action_5', 'Action_6', 'Action_7']
-    data.columns = column_names
+    column_names = [f'Action_{i+1}' for i in range(n_dims)]
+    data_pred.columns = column_names
+    data_gt.columns = column_names
     
-    # 创建时间步索引
-    time_steps = np.arange(len(data))
+    # 创建时间步索引（使用较短的长度）
+    min_len = min(len(data_pred), len(data_gt))
+    time_steps = np.arange(min_len)
+    
+    # 截取到相同长度
+    data_pred = data_pred.iloc[:min_len]
+    data_gt = data_gt.iloc[:min_len]
     
     # 设置图像参数
     plt.rcParams['font.size'] = 12
@@ -31,38 +43,57 @@ def plot_action_data(csv_file):
     except:
         plt.rcParams['font.sans-serif'] = ['DejaVu Sans']
     
-    # 创建子图
-    fig, axes = plt.subplots(3, 3, figsize=(16, 12))
-    fig.suptitle('Action Data Visualization - 7 Action Dimensions', fontsize=16, fontweight='bold')
+    # 根据维度数量动态创建子图布局
+    if n_dims <= 6:
+        rows, cols = 2, 3
+        figsize = (16, 10)
+    elif n_dims <= 9:
+        rows, cols = 3, 3
+        figsize = (16, 12)
+    else:
+        rows, cols = 4, 3
+        figsize = (16, 16)
     
-    # 绘制前7个子图
-    for i in range(7):
-        row = i // 3
-        col = i % 3
-        ax = axes[row, col]
+    # 创建子图
+    fig, axes = plt.subplots(rows, cols, figsize=figsize)
+    fig.suptitle(f'Action Data Visualization - {n_dims} Action Dimensions', fontsize=16, fontweight='bold')
+    
+    # 绘制动作子图
+    for i in range(n_dims):
+        row = i // cols
+        col = i % cols
+        if rows > 1:
+            ax = axes[row, col]
+        else:
+            ax = axes[col]
         
-        # 绘制线图
-        ax.plot(time_steps, data.iloc[:, i], linewidth=2, color=f'C{i}')
+        # 绘制预测数据和GT数据
+        ax.plot(time_steps, data_pred.iloc[:, i], linewidth=2, color=f'C{i}', 
+                label='Prediction', alpha=0.8)
+        ax.plot(time_steps, data_gt.iloc[:, i], linewidth=2, color='red', 
+                linestyle='--', label='Ground Truth', alpha=0.8)
+        
         ax.set_title(f'{column_names[i]}', fontweight='bold')
         ax.set_xlabel('Time Step')
         ax.set_ylabel('Value')
         ax.grid(True, alpha=0.3)
-        
-        # 添加统计信息
-        mean_val = data.iloc[:, i].mean()
-        std_val = data.iloc[:, i].std()
-        ax.axhline(y=mean_val, color='red', linestyle='--', alpha=0.7, 
-                  label=f'Mean: {mean_val:.3f}')
         ax.legend(fontsize=10)
         
-        # 设置y轴范围
-        y_min, y_max = data.iloc[:, i].min(), data.iloc[:, i].max()
+        # 设置y轴范围（考虑两条线的范围）
+        all_values = np.concatenate([data_pred.iloc[:, i], data_gt.iloc[:, i]])
+        y_min, y_max = all_values.min(), all_values.max()
         y_range = y_max - y_min
         ax.set_ylim(y_min - 0.1*y_range, y_max + 0.1*y_range)
     
     # 隐藏多余的子图
-    axes[2, 1].set_visible(False)
-    axes[2, 2].set_visible(False)
+    total_subplots = rows * cols
+    for i in range(n_dims, total_subplots):
+        row = i // cols
+        col = i % cols
+        if rows > 1:  # 确保是多行布局
+            axes[row, col].set_visible(False)
+        else:  # 单行布局
+            axes[col].set_visible(False)
     
     # 调整布局
     plt.tight_layout()
@@ -77,16 +108,23 @@ def plot_action_data(csv_file):
     
     # 打印数据统计信息
     print("\nData Statistics:")
-    print("=" * 50)
+    print("=" * 80)
+    print(f"{'Dimension':<12} {'Pred Mean':<12} {'GT Mean':<12} {'Pred Std':<12} {'GT Std':<12} {'MAE':<12}")
+    print("-" * 80)
+    
     for i, col in enumerate(column_names):
-        stats = data.iloc[:, i].describe()
-        print(f"\n{col}:")
-        print(f"  Mean: {stats['mean']:.6f}")
-        print(f"  Std: {stats['std']:.6f}")
-        print(f"  Min: {stats['min']:.6f}")
-        print(f"  Max: {stats['max']:.6f}")
-        print(f"  Range: {stats['max'] - stats['min']:.6f}")
+        pred_stats = data_pred.iloc[:, i].describe()
+        gt_stats = data_gt.iloc[:, i].describe()
+        mae = np.mean(np.abs(data_pred.iloc[:, i] - data_gt.iloc[:, i]))
+        
+        print(f"{col:<12} {pred_stats['mean']:<12.6f} {gt_stats['mean']:<12.6f} "
+              f"{pred_stats['std']:<12.6f} {gt_stats['std']:<12.6f} {mae:<12.6f}")
+    
+    # 总体MAE
+    overall_mae = np.mean(np.abs(data_pred - data_gt))
+    print(f"\nOverall MAE: {overall_mae:.6f}")
 
 if __name__ == "__main__":
     csv_file = "/ML-vePFS/tangyinzhou/yinuo/ManiSkill_evaluation/debug/action.csv"
-    plot_action_data(csv_file)
+    gt_file = "/ML-vePFS/tangyinzhou/yinuo/ManiSkill_evaluation/debug/action_GT.csv"
+    plot_action_data(csv_file, gt_file)

@@ -6,6 +6,7 @@ import time
 import numpy as np
 from typing import Annotated, Optional
 import torch
+import pandas as pd
 from pathlib import Path
 from mani_skill.utils import visualization
 from mani_skill.utils.visualization.misc import images_to_video
@@ -183,6 +184,8 @@ def main():
 
         total_action_list = []
         debug_cnt = 0
+        actions_log_10d_list = []
+
 
         elapsed_steps = 0
         predicted_terminated, truncated = False, False
@@ -202,6 +205,7 @@ def main():
                 for i in range(20): # dp generate 8
                     B = actions.shape[0] # B indicates the environment number
                     action = actions[:,i,:] # [B, 10]
+                    actions_log_10d_list.append(action)
                     # print("unprocess action:", action)
                     mat_6 = action[:,3:9].reshape(action.shape[0],3,2) # [B ,3, 2]
                     mat_6[:, :, 0] = mat_6[:, :, 0] / np.linalg.norm(mat_6[:, :, 0]) # [B, 3]
@@ -222,6 +226,7 @@ def main():
                             gripper_width
                         ],
                         axis=1) # [B, 7]
+
                     actions_list.append(pose_action)
             else:
                 if args.is_delta:
@@ -297,11 +302,31 @@ def main():
         # })
 
 
-        save_dir = "./debug/action.npy"
-        os.makedirs(os.path.dirname(save_dir), exist_ok=True)
-        np.save(save_dir, {
+        # 保存numpy格式
+        save_dir_npy = "./debug/action.npy"
+        os.makedirs(os.path.dirname(save_dir_npy), exist_ok=True)
+        np.save(save_dir_npy, {
             "action_log": np.array(action_log),
         })
+        
+        # 保存CSV格式（用于plot_actions.py）
+        save_dir_csv = "./debug/action.csv"
+        action_data = []
+        for action in total_action_list:
+            action_np = action.cpu().numpy() if isinstance(action, torch.Tensor) else action
+            action_data.append(action_np[0])  # 取第一个环境的7维动作
+        
+        np.savetxt(save_dir_csv, np.array(action_data), delimiter=',', fmt='%.6f')
+
+        # 保存10dCSV格式（用于plot_actions.py）
+        save_dir_csv_10d = "./debug/action_10d.csv"
+        action_data = []
+        for action in actions_log_10d_list:
+            action_np = action.cpu().numpy() if isinstance(action, torch.Tensor) else action
+            action_data.append(action_np[0])  # 取第一个环境的10维动作
+        
+        np.savetxt(save_dir_csv_10d, np.array(action_data), delimiter=',', fmt='%.6f')
+        print(f"10d动作数据已保存到: {save_dir_npy} 和 {save_dir_csv} 和 {save_dir_csv_10d}")
 
         # save video
 
